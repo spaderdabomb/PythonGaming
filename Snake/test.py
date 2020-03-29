@@ -1,137 +1,220 @@
+"""
+This program shows how to:
+  * Have one or more instruction screens
+  * Show a 'Game over' text and halt the game
+  * Allow the user to restart the game
+
+
+If Python and Arcade are installed, this example can be run from the command line with:
+python -m arcade.examples.instruction_and_game_over_screens
+"""
+
 import arcade
 import random
+import os
 
-# Set up the constants
+SPRITE_SCALING = 0.5
+
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-SCREEN_TITLE = "Shapes!"
+SCREEN_TITLE = "Instruction and Game Over Screens Example"
 
-RECT_WIDTH = 50
-RECT_HEIGHT = 50
-
-NUMBER_OF_SHAPES = 200
-
-
-class Shape:
-
-    def __init__(self, x, y, width, height, angle, delta_x, delta_y,
-                 delta_angle, color):
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-        self.angle = angle
-        self.delta_x = delta_x
-        self.delta_y = delta_y
-        self.delta_angle = delta_angle
-        self.color = color
-        self.shape_list = None
-
-    def move(self):
-        self.x += self.delta_x
-        self.y += self.delta_y
-        self.angle += self.delta_angle
-
-    def draw(self):
-        self.shape_list.center_x = 0
-        self.shape_list.center_y = 0
-        self.shape_list.angle = self.angle
-        self.shape_list.draw()
-
-class Ellipse(Shape):
-
-    def __init__(self, x, y, width, height, angle, delta_x, delta_y,
-                 delta_angle, color):
-
-        super().__init__(x, y, width, height, angle, delta_x, delta_y,
-                         delta_angle, color)
-
-        shape = arcade.create_ellipse_filled(self.x, self.y,
-                                             self.width, self.height,
-                                             self.color, self.angle)
-        self.shape_list = arcade.ShapeElementList()
-        self.shape_list.append(shape)
-
-
-class Rectangle(Shape):
-
-    def __init__(self, x, y, width, height, angle, delta_x, delta_y,
-                 delta_angle, color):
-
-        super().__init__(x, y, width, height, angle, delta_x, delta_y,
-                         delta_angle, color)
-
-        shape = arcade.create_rectangle_filled(self.x, self.y,
-                                               self.width, self.height,
-                                               self.color, self.angle)
-        self.shape_list = arcade.ShapeElementList()
-        self.shape_list.append(shape)
+# These numbers represent "states" that the game can be in.
+INSTRUCTIONS_PAGE_0 = 0
+INSTRUCTIONS_PAGE_1 = 1
+GAME_RUNNING = 2
+GAME_OVER = 3
 
 
 class MyGame(arcade.Window):
-    """ Main application class. """
+    """
+    Main application class.
+    """
 
-    def __init__(self):
-        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
-        self.shape_list = None
+    def __init__(self, screen_width, screen_height, title):
+        """ Constructor """
+        # Call the parent constructor. Required and must be the first line.
+        super().__init__(screen_width, screen_height, title)
+
+        # Set the working directory (where we expect to find files) to the same
+        # directory this .py file is in. You can leave this out of your own
+        # code, but it is needed to easily run the examples using "python -m"
+        # as mentioned at the top of this program.
+        file_path = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(file_path)
+
+        # Set the background color
+        arcade.set_background_color(arcade.color.AMAZON)
+
+        # Start 'state' will be showing the first page of instructions.
+        self.current_state = INSTRUCTIONS_PAGE_0
+
+        self.player_list = None
+        self.coin_list = None
+
+        # Set up the player
+        self.score = 0
+        self.player_sprite = None
+
+        # STEP 1: Put each instruction page in an image. Make sure the image
+        # matches the dimensions of the window, or it will stretch and look
+        # ugly. You can also do something similar if you want a page between
+        # each level.
+        self.instructions = []
+        texture = arcade.load_texture("images/instructions_0.png")
+        self.instructions.append(texture)
+
+        texture = arcade.load_texture("images/instructions_1.png")
+        self.instructions.append(texture)
 
     def setup(self):
-        """ Set up the game and initialize the variables. """
-        self.shape_list = []
+        """
+        Set up the game.
+        """
+        # Sprite lists
+        self.player_list = arcade.SpriteList()
+        self.coin_list = arcade.SpriteList()
 
-        for i in range(NUMBER_OF_SHAPES):
-            x = random.randrange(0, SCREEN_WIDTH)
-            y = random.randrange(0, SCREEN_HEIGHT)
-            width = random.randrange(10, 30)
-            height = random.randrange(10, 30)
-            angle = random.randrange(0, 360)
+        # Set up the player
+        self.score = 0
+        self.player_sprite = arcade.Sprite("images/character.png", SPRITE_SCALING)
+        self.player_sprite.center_x = 50
+        self.player_sprite.center_y = 50
+        self.player_list.append(self.player_sprite)
 
-            d_x = random.randrange(-3, 4)
-            d_y = random.randrange(-3, 4)
-            d_angle = random.randrange(-3, 4)
+        for i in range(50):
 
-            red = random.randrange(256)
-            green = random.randrange(256)
-            blue = random.randrange(256)
-            alpha = random.randrange(256)
+            # Create the coin instance
+            coin = arcade.Sprite("images/coin_01.png", SPRITE_SCALING / 3)
 
-            shape_type = random.randrange(2)
+            # Position the coin
+            coin.center_x = random.randrange(SCREEN_WIDTH)
+            coin.center_y = random.randrange(SCREEN_HEIGHT)
 
-            if shape_type == 0:
-                shape = Rectangle(x, y, width, height, angle, d_x, d_y,
-                                  d_angle, (red, green, blue, alpha))
-            else:
-                shape = Ellipse(x, y, width, height, angle, d_x, d_y,
-                                d_angle, (red, green, blue, alpha))
-            self.shape_list.append(shape)
+            # Add the coin to the lists
+            self.coin_list.append(coin)
 
-        self.myshape = Rectangle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 200, 200, 10, 10, 10, 0, arcade.color.WHITE)
+        # Don't show the mouse cursor
+        self.set_mouse_visible(False)
 
-    def on_update(self, dt):
-        """ Move everything """
+    # STEP 2: Add this function.
+    def draw_instructions_page(self, page_number):
+        """
+        Draw an instruction page. Load the page as an image.
+        """
+        page_texture = self.instructions[page_number]
+        arcade.draw_texture_rectangle(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2,
+                                      page_texture.width,
+                                      page_texture.height, page_texture, 0)
 
-        for shape in self.shape_list:
-            shape.move()
 
-        self.myshape.move()
+    # STEP 3: Add this function
+    def draw_game_over(self):
+        """
+        Draw "Game over" across the screen.
+        """
+        output = "Game Over"
+        arcade.draw_text(output, 240, 400, arcade.color.WHITE, 54)
 
+        output = "Click to restart"
+        arcade.draw_text(output, 310, 300, arcade.color.WHITE, 24)
+
+    # STEP 4: Take the drawing code you currently have in your
+    # on_draw method AFTER the start_render call and MOVE to a new
+    # method called draw_game.
+    def draw_game(self):
+        """
+        Draw all the sprites, along with the score.
+        """
+        # Draw all the sprites.
+        self.player_list.draw()
+        self.coin_list.draw()
+
+        # Put the text on the screen.
+        output = f"Score: {self.score}"
+        arcade.draw_text(output, 10, 20, arcade.color.WHITE, 14)
+
+    # STEP 5: Update the on_draw function to look like this. Adjust according
+    # to the number of instruction pages you have.
     def on_draw(self):
         """
         Render the screen.
         """
+
+        # This command has to happen before we start drawing
         arcade.start_render()
 
-        for shape in self.shape_list:
-            shape.draw()
+        if self.current_state == INSTRUCTIONS_PAGE_0:
+            self.draw_instructions_page(0)
 
-        # shape = arcade.create_rectangle_filled(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 200, 200, arcade.color.WHITE, 0)
-        # shape.draw()
+        elif self.current_state == INSTRUCTIONS_PAGE_1:
+            self.draw_instructions_page(1)
 
-        self.myshape.draw()
+        elif self.current_state == GAME_RUNNING:
+            self.draw_game()
+
+        else:
+            self.draw_game()
+            self.draw_game_over()
+
+    # STEP 6: Do something like adding this to your on_mouse_press to flip
+    # between instruction pages.
+    def on_mouse_press(self, x, y, button, modifiers):
+        """
+        Called when the user presses a mouse button.
+        """
+
+        # Change states as needed.
+        if self.current_state == INSTRUCTIONS_PAGE_0:
+            # Next page of instructions.
+            self.current_state = INSTRUCTIONS_PAGE_1
+        elif self.current_state == INSTRUCTIONS_PAGE_1:
+            # Start the game
+            self.setup()
+            self.current_state = GAME_RUNNING
+        elif self.current_state == GAME_OVER:
+            # Restart the game.
+            self.setup()
+            self.current_state = GAME_RUNNING
+
+    def on_mouse_motion(self, x, y, dx, dy):
+        """
+        Called whenever the mouse moves.
+        """
+        # Only move the user if the game is running.
+        if self.current_state == GAME_RUNNING:
+            self.player_sprite.center_x = x
+            self.player_sprite.center_y = y
+
+    # STEP 7: Only update if the game state is GAME_RUNNING like below:
+    def update(self, delta_time):
+        """ Movement and game logic """
+
+        # Only move and do things if the game is running.
+        if self.current_state == GAME_RUNNING:
+            # Call update on all sprites (The sprites don't do much in this
+            # example though.)
+            self.coin_list.update()
+            self.player_list.update()
+
+            # Generate a list of all sprites that collided with the player.
+            hit_list = arcade.check_for_collision_with_list(self.player_sprite, self.coin_list)
+
+            # Loop through each colliding sprite, remove it, and add to the
+            # score.
+            for coin in hit_list:
+                coin.kill()
+                self.score += 1
+
+            # If we've collected all the games, then move to a "GAME_OVER"
+            # state.
+            if len(self.coin_list) == 0:
+                self.current_state = GAME_OVER
+                self.set_mouse_visible(True)
+
 
 def main():
-    window = MyGame()
-    window.setup()
+    MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
     arcade.run()
 
 
