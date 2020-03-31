@@ -1,9 +1,9 @@
 import arcade
 import os
-import collections
-import time
+import pickle
 import numpy as np
-import random
+
+from game_data import GameData
 
 SCREEN_WIDTH = 960
 SCREEN_HEIGHT = 540
@@ -12,14 +12,16 @@ SCREEN_BORDER_PADDING = 20
 
 MOVEMENT_SPEED = 5
 MONSTER_SPEED = 2
+FIRE_RATE = 0.15
 
-FILE_PATH = os.path.dirname(os.path.abspath(__file__))
-SPRITES_PATH = os.path.join(FILE_PATH, 'Sprites')
+FILE_PATH = r'C:\Users\jpdodson\Box Sync\Programming\Python\Gaming\MonsterHunter'
+SPRITES_PATH =r'C:\Users\jpdodson\Box Sync\Programming\Python\Gaming\MonsterHunter\Sprites'
 
 START_SCENE_INDEX = 0
 GAME_RUNNING_SCENE_INDEX = 1
 WIN_SCENE_INDEX = 2
 LOSE_SCENE_INDEX = 3
+
 
 class Player(arcade.Sprite):
 
@@ -45,6 +47,8 @@ class Monster(arcade.Sprite):
     def __init__(self, file_name, scale):
         super().__init__(file_name, scale)
 
+        self.speed = MONSTER_SPEED
+
     def update(self):
         pass
 
@@ -52,8 +56,8 @@ class Monster(arcade.Sprite):
         dx = player_x - self.center_x
         dy = player_y - self.center_y
 
-        self.center_x += dx/(np.sqrt(dx**2 + dy**2))*MONSTER_SPEED
-        self.center_y += dy/(np.sqrt(dx**2 + dy**2))*MONSTER_SPEED
+        self.center_x += dx/(np.sqrt(dx**2 + dy**2))*self.speed
+        self.center_y += dy/(np.sqrt(dx**2 + dy**2))*self.speed
 
 
 class MyGame(arcade.Window):
@@ -61,8 +65,8 @@ class MyGame(arcade.Window):
     def __init__(self, width, height, name):
         super().__init__(width, height, name)
 
-        self.file_path = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(self.file_path)
+        # self.file_path = os.path.dirname(os.path.abspath(__file__))
+        # os.chdir(self.file_path)
 
         arcade.set_background_color(arcade.color.AMAZON)
 
@@ -79,15 +83,24 @@ class MyGame(arcade.Window):
         self.win_game_bool = False
         self.current_scene = START_SCENE_INDEX
         self.game_loaded = False
-        self.life_gained_arr = [(i+1)*i*5000 for i in range(100)]
+        self.life_gained_arr = [(i+1)*i*5000 for i in range(99)]
         self.life_gained_index = 0
+        self.difficulty_arr = [i*100 for i in range(100)]
+        self.game_completed = False
+
+        self.keyup_pressed = False
+        self.keydown_pressed = False
+        self.keyright_pressed = False
+        self.keyleft_pressed = False
+        self.keyspace_pressed = False
 
     def make_sprites(self):
 
         self.monsters_sprite_list = arcade.SpriteList()
         self.bullet_sprite_list = arcade.SpriteList()
+        self.fading_heart_list = arcade.SpriteList()
 
-        self.player = Player(os.path.join(SPRITES_PATH, 'player.png'), 0.20)
+        self.player = Player(os.path.join(SPRITES_PATH, 'player.png'), 0.25)
         self.player.center_x = SCREEN_WIDTH/2
         self.player.center_y = SCREEN_HEIGHT/2
 
@@ -98,7 +111,6 @@ class MyGame(arcade.Window):
             heart.center_y = SCREEN_HEIGHT - SCREEN_BORDER_PADDING
             self.heart_sprite_list.append(heart)
 
-
     def setup_UI(self):
         self.score_text = None
 
@@ -107,6 +119,16 @@ class MyGame(arcade.Window):
         # Only update if in game scene
         if self.current_scene == GAME_RUNNING_SCENE_INDEX:
             self.game_update(dt)
+
+    def on_draw(self):
+        arcade.start_render()
+
+        if self.current_scene == START_SCENE_INDEX:
+            self.draw_start_scene()
+        elif self.current_scene == GAME_RUNNING_SCENE_INDEX:
+            self.draw_game()
+        elif (self.current_scene == WIN_SCENE_INDEX) or (self.current_scene == LOSE_SCENE_INDEX):
+            self.complete_level()
 
     def game_update(self, dt):
         # Update sprites
@@ -120,12 +142,46 @@ class MyGame(arcade.Window):
         for heart in self.heart_sprite_list:
             heart.update()
 
-        # Game logic
-        if (int(self.level_timer * 60 % 100) == 0):
-            monster = Monster(os.path.join(SPRITES_PATH, 'monster.png'), 0.1)
-            monster.center_x = np.random.randint(0, SCREEN_WIDTH)
-            monster.center_y = np.random.randint(0, SCREEN_HEIGHT)
-            self.monsters_sprite_list.append(monster)
+        # Monster spawning logic
+        difficulty_index = 0
+        for i in range(len(self.difficulty_arr)):
+            if int(self.level_timer * 60) > self.difficulty_arr[i]:
+                difficulty_index = i
+            else:
+                break
+
+        if (int(self.level_timer * 60 % (100 - difficulty_index)) == 0):
+            multi_spawning = int(np.round(difficulty_index / 20))
+            for i in range(multi_spawning + 1):
+                # Make monster
+                monster = Monster(os.path.join(SPRITES_PATH, 'monster.png'), 0.15)
+                monster.center_x = np.random.randint(0, SCREEN_WIDTH)
+                monster.center_y = np.random.randint(0, SCREEN_HEIGHT)
+
+                # Make red monsters
+                red_monster_index = np.random.randint(100 - difficulty_index)
+                if red_monster_index < 10:
+                    monster_speed = MONSTER_SPEED * 2
+                    monster.speed = monster_speed
+                    monster.color = (255, 0, 0)
+
+                # Handle monsters accidentally spawning on player
+                monster_player_dist = ((self.player.center_x - monster.center_x)**2 +
+                                       (self.player.center_y - monster.center_y)**2)**(1/2)
+                monster_player_widths = ((self.player.width + monster.width)**2 +
+                                         (self.player.width - monster.width)**2)**(1/2)
+                if monster_player_dist < 4*monster_player_widths:
+                    rand_int = np.random.randint(0, 3)
+                    if rand_int == 0:
+                        monster.center_x -= 2*monster_player_widths
+                    elif rand_int == 1:
+                        monster.center_x += 2*monster_player_widths
+                    elif rand_int == 2:
+                        monster.center_y -= 2*monster_player_widths
+                    elif rand_int == 3:
+                        monster.center_y += 2*monster_player_widths
+
+                self.monsters_sprite_list.append(monster)
 
         # Check for bullet collision with monster
         for bullet in self.bullet_sprite_list:
@@ -146,33 +202,49 @@ class MyGame(arcade.Window):
                     monster.remove_from_sprite_lists()
                     self.heart_sprite_list.pop(-1)
 
+        # Clean up bullet sprites
+        for bullet in self.bullet_sprite_list:
+            if bullet.bottom > self.width or bullet.top < 0 or bullet.right < 0 or bullet.left > self.width:
+                bullet.remove_from_sprite_lists()
+
         # Add life for score milestones
         if self.score > self.life_gained_arr[self.life_gained_index + 1]:
-            print('added life')
+            # Handle hearts and lives
             heart = arcade.Sprite(os.path.join(SPRITES_PATH, 'heart.png'), 0.3)
             heart.center_x = (SCREEN_BORDER_PADDING + (heart.width + 5)*len(self.heart_sprite_list))
             heart.center_y = SCREEN_HEIGHT - SCREEN_BORDER_PADDING
             self.heart_sprite_list.append(heart)
             self.life_gained_index += 1
 
+            # Fading heart
+            heart = arcade.Sprite(os.path.join(SPRITES_PATH, 'heart.png'), 1.0)
+            heart.center_x = SCREEN_WIDTH / 2
+            heart.center_y = SCREEN_HEIGHT * 3/4
+            self.fading_heart_list.append(heart)
+
+        # Routine for fading hearts
+        for heart in self.fading_heart_list:
+            alpha = heart.alpha
+            alpha -= 10
+            if alpha <= 0:
+                heart.remove_from_sprite_lists()
+            else:
+                heart.color = (255, 255, 255, alpha)
+                heart.center_y += 5
+
+        # Routine for holding spacebar to shoot
+        if self.keyspace_pressed and self.time_since_bullet_fired > FIRE_RATE:
+            self.time_since_bullet_fired = 0
+            self.fire_bullet()
+
         # Update UI
         self.level_timer += dt
         self.score += dt * 60
         self.time_since_bullet_fired += dt
 
-    def on_draw(self):
-        arcade.start_render()
-
-        if self.current_scene == START_SCENE_INDEX:
-            self.draw_start_scene()
-        elif self.current_scene == GAME_RUNNING_SCENE_INDEX:
-            self.draw_game()
-        elif (self.current_scene == WIN_SCENE_INDEX) or (self.current_scene == LOSE_SCENE_INDEX):
-            self.complete_level()
-
     def draw_game(self):
         # Draw UI
-        self.scoretext_str = 'Score: ' + str(int(self.score))
+        self.scoretext_str = 'Score: ' + str(int(np.floor(self.score)))
         self.scoretext = arcade.draw_text(self.scoretext_str, SCREEN_WIDTH - 20, SCREEN_HEIGHT - 30,
                                           arcade.color.WHITE,
                                           align="left", anchor_x="right", bold=True, font_size=16)
@@ -185,23 +257,30 @@ class MyGame(arcade.Window):
             bullet.draw()
         for heart in self.heart_sprite_list:
             heart.draw()
+        for fading_heart in self.fading_heart_list:
+            fading_heart.draw()
 
     def on_key_press(self, key, modifiers):
         """Called whenever a key is pressed. """
 
         # Movement
-        if key == arcade.key.UP:
-            self.player.change_y = MOVEMENT_SPEED
-            self.current_direction = 'up'
-        elif key == arcade.key.DOWN:
-            self.player.change_y = -MOVEMENT_SPEED
-            self.current_direction = 'down'
-        elif key == arcade.key.LEFT:
-            self.current_direction = 'left'
-            self.player.change_x = -MOVEMENT_SPEED
-        elif key == arcade.key.RIGHT:
-            self.current_direction = 'right'
-            self.player.change_x = MOVEMENT_SPEED
+        if self.current_scene == GAME_RUNNING_SCENE_INDEX:
+            if key == arcade.key.UP:
+                self.player.change_y = MOVEMENT_SPEED
+                self.current_direction = 'up'
+                self.keyup_pressed = True
+            elif key == arcade.key.DOWN:
+                self.player.change_y = -MOVEMENT_SPEED
+                self.current_direction = 'down'
+                self.keydown_pressed = True
+            elif key == arcade.key.LEFT:
+                self.current_direction = 'left'
+                self.player.change_x = -MOVEMENT_SPEED
+                self.keyleft_pressed = True
+            elif key == arcade.key.RIGHT:
+                self.current_direction = 'right'
+                self.player.change_x = MOVEMENT_SPEED
+                self.keyright_pressed = True
 
         # Shooting
         if key == arcade.key.SPACE:
@@ -209,23 +288,73 @@ class MyGame(arcade.Window):
                 self.current_scene = GAME_RUNNING_SCENE_INDEX
             elif self.current_scene == LOSE_SCENE_INDEX:
                 self.restart_game()
-            elif self.current_scene == GAME_RUNNING_SCENE_INDEX:
+            elif (self.current_scene == GAME_RUNNING_SCENE_INDEX) and (self.time_since_bullet_fired > 0.15):
+                self.keyspace_pressed = True
                 self.time_since_bullet_fired = 0
                 self.fire_bullet()
 
     def on_key_release(self, key, modifiers):
         """Called when the user releases a key. """
 
-        if key == arcade.key.UP or key == arcade.key.DOWN:
-            self.player.change_y = 0
-        elif key == arcade.key.LEFT or key == arcade.key.RIGHT:
-            self.player.change_x = 0
+        if self.current_scene == GAME_RUNNING_SCENE_INDEX:
+            if key == arcade.key.UP:
+                self.player.change_y = 0
+                self.keyup_pressed = False
+            elif key == arcade.key.DOWN:
+                self.player.change_y = 0
+                self.keydown_pressed = False
+            elif key == arcade.key.LEFT:
+                self.player.change_x = 0
+                self.keyleft_pressed = False
+            elif key == arcade.key.RIGHT:
+                self.player.change_x = 0
+                self.keyright_pressed = False
+            elif key == arcade.key.SPACE:
+                self.keyspace_pressed = False
+
+            # Extra logic for holding down keys
+            if self.keyup_pressed:
+                self.player.change_y = MOVEMENT_SPEED
+            if self.keydown_pressed:
+                self.player.change_y = -MOVEMENT_SPEED
+            if self.keyleft_pressed:
+                self.player.change_x = -MOVEMENT_SPEED
+            if self.keyright_pressed:
+                self.player.change_x = MOVEMENT_SPEED
+            if (self.keyspace_pressed) and (self.time_since_bullet_fired > FIRE_RATE):
+                self.time_since_bullet_fired = 0
+                self.fire_bullet()
 
     def fire_bullet(self):
         bullet = arcade.Sprite(os.path.join(SPRITES_PATH, 'bullet.png'), 0.05)
         bullet.center_x = self.player.center_x
         bullet.center_y = self.player.center_y
-        if self.current_direction == 'up':
+
+        if self.keyup_pressed and self.keyright_pressed:
+            bullet.change_x = 10
+            bullet.change_y = 10
+        elif self.keyup_pressed and self.keyleft_pressed:
+            bullet.change_x = -10
+            bullet.change_y = 10
+        elif self.keydown_pressed and self.keyright_pressed:
+            bullet.change_x = 10
+            bullet.change_y = -10
+        elif self.keydown_pressed and self.keyleft_pressed:
+            bullet.change_x = -10
+            bullet.change_y = -10
+        elif self.keyup_pressed:
+            bullet.change_x = 0
+            bullet.change_y = 10
+        elif self.keydown_pressed:
+            bullet.change_x = 0
+            bullet.change_y = -10
+        elif self.keyright_pressed:
+            bullet.change_x = 10
+            bullet.change_y = 0
+        elif self.keyleft_pressed:
+            bullet.change_x = -10
+            bullet.change_y = 0
+        elif self.current_direction == 'up':
             bullet.change_x = 0
             bullet.change_y = 10
         elif self.current_direction == 'down':
@@ -241,6 +370,12 @@ class MyGame(arcade.Window):
         self.bullet_sprite_list.append(bullet)
 
     def complete_level(self):
+        if self.game_completed is False:
+            highscore = GameData.get_key_value('highscore')
+            if self.score > highscore:
+                GameData.set_key_value('highscore', int(np.floor(self.score)))
+                GameData.save_data()
+            self.game_completed = True
 
         if self.win_game_bool:
             self.current_scene = WIN_SCENE_INDEX
@@ -250,16 +385,21 @@ class MyGame(arcade.Window):
             self.draw_lose_scene()
 
     def draw_win_scene(self):
-        print('you win')
+        pass
 
     def draw_lose_scene(self):
         texture = arcade.load_texture(os.path.join(SPRITES_PATH, 'lose_scene.png'))
         arcade.draw_texture_rectangle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, texture.width, texture.height, texture, 0)
 
-        self.scoretext_str = 'Score: ' + str(int(self.score))
+        self.scoretext_str = 'Score: ' + str(int(np.floor(self.score)))
         self.scoretext = arcade.draw_text(self.scoretext_str, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3.4,
                                           arcade.color.WHITE,
                                           align="center", anchor_x="center", bold=True, font_size=24)
+
+        self.highscore_str = 'Highscore: ' + str(int(np.floor(GameData.data.get('highscore'))))
+        self.highscore_text = arcade.draw_text(self.highscore_str, SCREEN_WIDTH - 20, SCREEN_HEIGHT - 30,
+                                          arcade.color.WHITE,
+                                          align="left", anchor_x="right", bold=True, font_size=16)
 
     def draw_start_scene(self):
         """
@@ -274,16 +414,59 @@ class MyGame(arcade.Window):
         self.current_scene = GAME_RUNNING_SCENE_INDEX
 
 
+class DumbClass():
+    '''
+    Stores persistent data
+    '''
 
+    # Initializes data dictionary keys for saving and loading data
+    NUM_ACHIEVEMENTS = 0
+    FILE_NAME = 'GameData.pickle'
+    initial_data = {
+        'highscore': 0,
+        'top10': [0 for i in range(10)],
+        'achievements_complete': [False for j in range(NUM_ACHIEVEMENTS)]
+    }
+    data = initial_data
 
+    @staticmethod
+    def __init__():
+        '''
+        When GameData class is initialized, it tries to load previous GameData
+        '''
+        pass
+        DumbClass.load_data()
 
+    @staticmethod
+    def save_data():
+        '''
+        Saves data
+        '''
+        try:
+            with open(DumbClass.FILE_NAME, 'wb') as f:
+                pickle.dump(DumbClass.data, f, pickle.HIGHEST_PROTOCOL)
+        except:
+            pass
 
+    @staticmethod
+    def load_data():
+        '''
+        Loads data
+        '''
+        data = None
+        try:
+            with open(DumbClass.FILE_NAME, 'rb') as f:
+                data = pickle.load(f)
+        except:
+            pass
 
+        #DumbClass.data = data
 
-
+        return DumbClass.data
 
 
 def main():
+    GameData(SCREEN_TITLE)
     window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
     arcade.run()
 
